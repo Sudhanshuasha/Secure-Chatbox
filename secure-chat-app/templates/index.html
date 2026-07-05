@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Premium E2EE Secure Messenger</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-body: #e0f2fe; /* Light ocean water tint */
+            --bg-container: rgba(255, 255, 255, 0.75); /* Foggy Transparent look */
+            --bg-sidebar: rgba(248, 250, 252, 0.85);
+            --bg-chat-header: rgba(255, 255, 255, 0.85);
+            --border-color: rgba(226, 232, 240, 0.8);
+            --text-main: #0f172a;
+            --text-muted: #64748b;
+            --primary: #0077b6; /* Premium Ocean Blue Primary */
+            --primary-hover: #0096c7;
+            --msg-sent: rgba(202, 240, 248, 0.85); /* Transparent Blueish Bubble */
+            --msg-received: rgba(255, 255, 255, 0.85); /* Transparent White Bubble */
+            --console-bg: #0f172a;
+        }
+
+        [data-theme="dark"] {
+            --bg-body: #03045e;
+            --bg-container: rgba(10, 25, 47, 0.75);
+            --bg-sidebar: rgba(10, 25, 47, 0.85);
+            --bg-chat-header: rgba(17, 34, 64, 0.85);
+            --border-color: rgba(30, 41, 59, 0.8);
+            --text-main: #f1f5f9;
+            --text-muted: #94a3b8;
+            --primary: #00b4d8; /* Bright Deep Ocean Blue */
+            --primary-hover: #90e0ef;
+            --msg-sent: rgba(0, 119, 182, 0.6);
+            --msg-received: rgba(30, 41, 59, 0.7);
+            --console-bg: #020617;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; transition: background-color 0.25s, border-color 0.25s; }
+        body { font-family: 'Inter', sans-serif; background: var(--bg-body); color: var(--text-main); height: 100vh; padding: 20px; display: flex; flex-direction: column; }
+        
+        #app-wrapper { max-width: 1200px; width: 100%; margin: 0 auto; display: flex; flex-direction: column; height: 90vh; }
+        
+        /* Glassmorphism/Foggy Layout Base Configuration */
+        #chat-container { display: flex; background: var(--bg-container); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-radius: 12px; box-shadow: 0 8px 32px rgba(0,0,0,0.08); flex-grow: 1; overflow: hidden; border: 1px solid var(--border-color); }
+        
+        #sidebar { width: 320px; border-right: 1px solid var(--border-color); padding: 20px; background: var(--bg-sidebar); display: flex; flex-direction: column; gap: 15px; }
+        .sidebar-header { display: flex; justify-content: space-between; align-items: center; padding-bottom: 10px; }
+        .search-box { width: 100%; padding: 10px 14px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-chat-header); color: var(--text-main); font-size: 0.9rem; outline: none; }
+        #user-list { list-style: none; overflow-y: auto; flex-grow: 1; display: flex; flex-direction: column; gap: 8px; }
+        
+        .user-item { display: flex; align-items: center; gap: 12px; padding: 10px; border-radius: 8px; cursor: pointer; border: none; background: transparent; width: 100%; text-align: left; color: var(--text-main); }
+        .user-item:hover { background: rgba(0, 119, 182, 0.1); }
+        .user-item.active { background: var(--primary); color: white !important; }
+        .user-item.active * { color: #ffffff !important; }
+        
+        .avatar { width: 40px; height: 40px; border-radius: 50%; background: var(--primary); color: white; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 1rem; position: relative; }
+        .status-dot { width: 12px; height: 12px; border-radius: 50%; background: #22c55e; position: absolute; bottom: 0; right: 0; border: 2px solid white; }
+        
+        #main-chat { width: calc(100% - 320px); display: flex; flex-direction: column; background: transparent; position: relative; }
+        .chat-header { height: 64px; border-bottom: 1px solid var(--border-color); padding: 0 20px; display: flex; align-items: center; justify-content: space-between; background: var(--bg-chat-header); z-index: 10; }
+        
+        /* Message Workspace View Box Frame */
+        #messages { flex-grow: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 10px; background-size: cover; background-position: center; background-repeat: no-repeat; }
+        
+        .msg-wrapper { display: flex; flex-direction: column; max-width: 65%; animation: bubblePop 0.2s ease-out; }
+        .msg-wrapper.sent { align-self: flex-end; align-items: flex-end; }
+        .msg-wrapper.received { align-self: flex-start; align-items: flex-start; }
+        
+        /* Foggy white transparent message container tweaks */
+        .msg-bubble { padding: 10px 14px; border-radius: 12px; font-size: 0.95rem; line-height: 1.4; word-break: break-all; box-shadow: 0 2px 8px rgba(0,0,0,0.04); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); border: 1px solid rgba(255,255,255,0.2); }
+        .sent .msg-bubble { background: var(--msg-sent); border-top-right-radius: 2px; }
+        .received .msg-bubble { background: var(--msg-received); border-top-left-radius: 2px; }
+        
+        .msg-meta { font-size: 0.72rem; color: var(--text-muted); margin-top: 4px; display: flex; align-items: center; gap: 5px; }
+        .status-tick { font-weight: bold; font-size: 0.85rem; }
+        .status-tick.read { color: #00b4d8; }
+        
+        #input-area { padding: 15px 20px; background: var(--bg-chat-header); border-top: 1px solid var(--border-color); display: flex; align-items: center; gap: 12px; }
+        #message-input { flex-grow: 1; padding: 12px 16px; border-radius: 24px; border: 1px solid var(--border-color); background: var(--bg-body); color: var(--text-main); font-size: 0.95rem; outline: none; }
+        
+        .btn { padding: 10px 18px; border-radius: 8px; font-weight: 600; cursor: pointer; border: none; font-size: 0.9rem; display: inline-flex; align-items: center; gap: 6px; }
+        .btn-primary { background: var(--primary); color: white; }
+        .btn-primary:hover { background: var(--primary-hover); }
+        .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
+        
+        .fingerprint { font-size: 0.75rem; color: var(--text-muted); font-family: monospace; cursor: pointer; text-decoration: underline; }
+        #typing-indicator { font-size: 0.85rem; color: var(--text-muted); font-style: italic; padding: 2px 20px; min-height: 20px; }
+        
+        .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: none; align-items: center; justify-content: center; z-index: 100; backdrop-filter: blur(4px); }
+        .modal-content { background: var(--bg-container); backdrop-filter: blur(16px); padding: 24px; border-radius: 12px; max-width: 450px; width: 90%; box-shadow: 0 10px 25px rgba(0,0,0,0.15); display: flex; flex-direction: column; gap: 15px; border: 1px solid var(--border-color); }
+        
+        #cipher-console { max-width: 1200px; width: 100%; margin: 15px auto 0 auto; padding: 15px; background: var(--console-bg); color: #00b4d8; font-family: 'Courier New', monospace; font-size: 11px; border-radius: 8px; box-shadow: inset 0 0 10px #000; height: 110px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; border: 1px solid var(--border-color); opacity: 0.95; }
+        
+        @keyframes bubblePop { from { transform: scale(0.96); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+    </style>
+</head>
+<body>
+
+<div id="login" style="text-align: center; margin: auto; max-width: 400px; padding: 40px; background: white; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.05); border: 1px solid #cbd5e1;">
+    <h2 style="margin-bottom: 10px; font-weight: 700; color: #0077b6;">Oceanic Secure Tunnel</h2>
+    <p style="color: var(--text-muted); margin-bottom: 25px; font-size: 0.9rem;">Generate local 2048-bit keys for end-to-end payload encryption.</p>
+    <input type="text" id="username-input" class="search-box" style="margin-bottom: 15px; text-align: center;" placeholder="Enter username (e.g., Alice)">
+    <button onclick="initApp()" class="btn btn-primary" style="width: 100%; justify-content: center;">Initialize Security Keys</button>
+</div>
+
+<div id="app-wrapper" style="display: none;">
+    <div id="chat-container">
+        <div id="sidebar">
+            <div class="sidebar-header">
+                <h3 style="font-weight: 700; font-size: 1.25rem;">Secure Nodes</h3>
+                <button onclick="toggleTheme()" class="btn" style="background: transparent; color: var(--text-muted); padding: 5px;">🌗</button>
+            </div>
+            <input type="text" id="search-users" class="search-box" placeholder="Search active peers..." oninput="filterUserSidebarList()">
+            <ul id="user-list"></ul>
+            <hr style="border: 0; border-top: 1px solid var(--border-color);">
+            <div>
+                <span style="font-size: 0.8rem; font-weight:600; color: var(--text-muted);">Your Public Identity ID:</span>
+                <div id="my-fingerprint" class="fingerprint" onclick="triggerIdentityVerificationModal(myUsername, true)">Computing identity...</div>
+            </div>
+            <div>
+                <span style="font-size: 0.8rem; font-weight:600; color: var(--text-muted);">Wallpaper Preferences:</span>
+                <div style="display:flex; gap: 5px; margin-top:5px;">
+                    <button class="btn" style="padding: 4px 8px; font-size:0.75rem; background: var(--primary); color: white;" onclick="resetToDefaultProjectWallpaper()">Default Asset</button>
+                    <input type="file" id="wallpaper-upload" style="display: none;" accept="image/*" onchange="processCustomWallpaperUpload(this)">
+                    <button class="btn" style="padding: 4px 8px; font-size:0.75rem; background: var(--border-color); color: var(--text-main);" onclick="document.getElementById('wallpaper-upload').click()">Upload New</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="main-chat">
+            <div class="chat-header">
+                <div>
+                    <h4 id="chat-with-title" style="font-weight: 600;">Select active recipient to establish tunnel</h4>
+                    <div id="peer-fingerprint-preview" class="fingerprint" style="display: none;">Peer code unverified</div>
+                </div>
+                <button id="verify-identity-action-btn" class="btn btn-primary" style="display: none; padding: 6px 12px; font-size: 0.8rem;" onclick="triggerIdentityVerificationModal(targetUser, false)">Verify Integrity</button>
+            </div>
+            
+            <div id="messages"></div>
+            <div id="typing-indicator"></div>
+            
+            <div id="input-area">
+                <input type="text" id="message-input" placeholder="Compose end-to-end encrypted packet payload..." disabled oninput="emitLocalTypingLifecycleSignal()">
+                <button id="send-btn" class="btn btn-primary" onclick="sendMessage()" disabled>Send</button>
+            </div>
+        </div>
+    </div>
+    
+    <div id="cipher-console">[SYS] Cipher payload transmission monitor interface active. Waiting for initialization parameters...</div>
+</div>
+
+<div id="crypto-modal" class="modal-overlay">
+    <div class="modal-content">
+        <h3 id="modal-title" style="font-weight: 700;">Cryptographic Key Verification</h3>
+        <p style="font-size: 0.85rem; color: var(--text-muted); line-height: 1.4;">Compare this parameter check string via an alternative reliable channel.</p>
+        <div>
+            <strong style="font-size: 0.8rem; display:block; margin-bottom:4px;" id="modal-target-label">Fingerprint Digest:</strong>
+            <div id="modal-fingerprint-display" style="background: rgba(0,0,0,0.05); padding: 12px; font-family: monospace; border-radius: 6px; font-size: 0.9rem; word-break: break-all;"></div>
+        </div>
+        <div id="verification-decision-panel" style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 10px;">
+            <button class="btn" style="background: #ef4444; color: white;" onclick="recordFingerprintValidationState(false)">Mark Untrusted</button>
+            <button class="btn" style="background: #22c55e; color: white;" onclick="recordFingerprintValidationState(true)">Verify Match</button>
+        </div>
+        <button class="btn" style="background: var(--border-color); color: var(--text-main); margin-top: 5px; justify-content: center;" onclick="closeCryptoVerificationModal()">Dismiss Dialog</button>
+    </div>
+</div>
+
+<script>
+let socket = io();
+let myUsername = "";
+let targetUser = "";
+let myKeyPair = null;
+
+let userPublicKeys = {};
+let cachedUserPresenceRecords = [];
+let trackedIdentityFingerprints = {};
+let manuallyVerifiedKeysRecord = {};
+let localTypingActivityTimeoutHandle = null;
+
+function arrayBufferToBase64(buffer) {
+    let binary = '';
+    let bytes = new Uint8Array(buffer);
+    for (let i = 0; i < bytes.byteLength; i++) { binary += String.fromCharCode(bytes[i]); }
+    return window.btoa(binary);
+}
+
+function base64ToArrayBuffer(base64) {
+    let binary_string = window.atob(base64);
+    let len = binary_string.length;
+    let bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) { bytes[i] = binary_string.charCodeAt(i); }
+    return bytes.buffer;
+}
+
+async function initApp() {
+    myUsername = document.getElementById('username-input').value.trim();
+    if(!myUsername) return alert("Identity parameters required.");
+
+    document.getElementById('login').style.display = 'none';
+    document.getElementById('app-wrapper').style.display = 'flex';
+
+    myKeyPair = await window.crypto.subtle.generateKey(
+        { name: "RSA-OAEP", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" },
+        true,
+        ["encrypt", "decrypt"]
+    );
+
+    const exportedPublic = await window.crypto.subtle.exportKey("spki", myKeyPair.publicKey);
+    const publicBase64 = arrayBufferToBase64(exportedPublic);
+
+    const hashBuffer = await window.crypto.subtle.digest("SHA-256", exportedPublic);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const fingerprint = hashArray.map(b => b.toString(16).padStart(2, '0')).join(':');
+    
+    trackedIdentityFingerprints[myUsername] = fingerprint;
+    document.getElementById('my-fingerprint').innerText = fingerprint.substring(0, 29) + "...";
+
+    // Setup initial workspace wallpaper preferences layout rules
+    const preservedWallpaper = localStorage.getItem('e2ee_chat_wallpaper');
+    if (preservedWallpaper) {
+        document.getElementById('messages').style.backgroundImage = preservedWallpaper.startsWith('url') ? preservedWallpaper : `url('${preservedWallpaper}')`;
+    } else {
+        resetToDefaultProjectWallpaper();
+    }
+
+    if (localStorage.getItem('e2ee_theme') === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+
+    socket.emit('register', { username: myUsername, public_key: publicBase64 });
+}
+
+function resetToDefaultProjectWallpaper() {
+    // Dynamically references the image located within your static asset workspace directory folder 
+    const defaultAssetUrl = "url('/static/default-wallpaper.jpg')";
+    document.getElementById('messages').style.backgroundImage = defaultAssetUrl;
+    localStorage.setItem('e2ee_chat_wallpaper', defaultAssetUrl);
+}
+
+socket.on('user_list', (users) => {
+    cachedUserPresenceRecords = users;
+    filterUserSidebarList();
+});
+
+function filterUserSidebarList() {
+    const filterQuery = document.getElementById('search-users').value.toLowerCase().trim();
+    let listEl = document.getElementById('user-list');
+    listEl.innerHTML = "";
+
+    cachedUserPresenceRecords.forEach(user => {
+        if(user.username === myUsername) return;
+        if(filterQuery && !user.username.toLowerCase().includes(filterQuery)) return;
+
+        let li = document.createElement('li');
+        const initials = user.username.substring(0, 2).toUpperCase();
+        const activeHighlightClass = (user.username === targetUser) ? 'active' : '';
+        
+        li.innerHTML = `
+            <button class="user-item ${activeHighlightClass}" onclick="selectUser('${user.username}')">
+                <div class="avatar">${initials}<div class="status-dot"></div></div>
+                <div style="flex-grow:1;">
+                    <div style="font-weight: 600; font-size:0.95rem;">${user.username}</div>
+                    <div style="font-size: 0.75rem; opacity: 0.7;">Secure Path Established</div>
+                </div>
+            </button>
+        `;
+        listEl.appendChild(li);
+    });
+}
+
+function selectUser(user) {
+    targetUser = user;
+    document.getElementById('chat-with-title').innerText = `Tunnel Instance: ${targetUser}`;
+    document.getElementById('message-input').disabled = false;
+    document.getElementById('send-btn').disabled = false;
+    document.getElementById('messages').innerHTML = ""; 
+    
+    document.getElementById('verify-identity-action-btn').style.display = 'inline-flex';
+    document.getElementById('peer-fingerprint-preview').style.display = 'block';
+    updatePeerFingerprintDisplayLabel();
+
+    filterUserSidebarList();
+    socket.emit('get_public_key', { target_user: targetUser });
+}
+
+socket.on('receive_public_key', async (data) => {
+    if(data.target_user === targetUser) {
+        const binaryKey = base64ToArrayBuffer(data.public_key);
+        const hashBuffer = await window.crypto.subtle.digest("SHA-256", binaryKey);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        trackedIdentityFingerprints[targetUser] = hashArray.map(b => b.toString(16).padStart(2, '0')).join(':');
+        updatePeerFingerprintDisplayLabel();
+
+        userPublicKeys[targetUser] = await window.crypto.subtle.importKey(
+            "spki", binaryKey, { name: "RSA-OAEP", hash: "SHA-256" }, false, ["encrypt"]
+        );
+    }
+});
+
+function updatePeerFingerprintDisplayLabel() {
+    const labelEl = document.getElementById('peer-fingerprint-preview');
+    if (!trackedIdentityFingerprints[targetUser]) {
+        labelEl.innerText = "Synchronizing keys...";
+        return;
+    }
+    const fingerprintStr = trackedIdentityFingerprints[targetUser].substring(0, 23) + "...";
+    const verificationStatus = manuallyVerifiedKeysRecord[targetUser] ? "🔒 Verified Match" : "⚠️ Unverified Key Link";
+    labelEl.innerText = `${fingerprintStr} (${verificationStatus})`;
+}
+
+async function sendMessage() {
+    const text = document.getElementById('message-input').value.trim();
+    if(!text || !targetUser) return;
+
+    const currentUniqueMsgId = 'msg_' + window.crypto.getRandomValues(new Uint32Array(1))[0];
+
+    const aesKey = await window.crypto.subtle.generateKey(
+        { name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]
+    );
+
+    const iv = window.crypto.getRandomValues(new Uint8Array(12));
+    const encodedText = new TextEncoder().encode(text);
+    const encryptedMessageBuffer = await window.crypto.subtle.encrypt(
+        { name: "AES-GCM", iv: iv }, aesKey, encodedText
+    );
+
+    const exportedAesKey = await window.crypto.subtle.exportKey("raw", aesKey);
+    const encryptedAesKeyBuffer = await window.crypto.subtle.encrypt(
+        { name: "RSA-OAEP" }, userPublicKeys[targetUser], exportedAesKey
+    );
+
+    let payload = {
+        msg_id: currentUniqueMsgId,
+        sender: myUsername,
+        receiver: targetUser,
+        encrypted_aes_key: arrayBufferToBase64(encryptedAesKeyBuffer),
+        encrypted_message: arrayBufferToBase64(encryptedMessageBuffer),
+        iv: arrayBufferToBase64(iv),
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    };
+
+    logToTerminalWindowInterfaceConsole("SECURE OUTBOUND TRACKING", payload);
+    socket.emit('send_encrypted_msg', payload);
+    
+    appendMessageElementToChatLayout(currentUniqueMsgId, myUsername, text, 'sent', payload.timestamp);
+    document.getElementById('message-input').value = "";
+    socket.emit('typing_status', { target_user: targetUser, is_typing: false });
+}
+
+socket.on('receive_encrypted_msg', async (data) => {
+    if (data.receiver === myUsername) {
+        logToTerminalWindowInterfaceConsole("SECURE INBOUND INTERCEPT", data);
+        try {
+            const encryptedAesBuffer = base64ToArrayBuffer(data.encrypted_aes_key);
+            const decryptedAesKeyBuffer = await window.crypto.subtle.decrypt(
+                { name: "RSA-OAEP" }, myKeyPair.privateKey, encryptedAesBuffer
+            );
+
+            const aesKey = await window.crypto.subtle.importKey(
+                "raw", decryptedAesKeyBuffer, { name: "AES-GCM" }, false, ["decrypt"]
+            );
+
+            const encryptedMsgBuffer = base64ToArrayBuffer(data.encrypted_message);
+            const ivBuffer = base64ToArrayBuffer(data.iv);
+            
+            const decryptedMessageBuffer = await window.crypto.subtle.decrypt(
+                { name: "AES-GCM", iv: new Uint8Array(ivBuffer) }, aesKey, encryptedMsgBuffer
+            );
+
+            const plaintext = new TextDecoder().decode(decryptedMessageBuffer);
+            
+            if(data.sender === targetUser) {
+                appendMessageElementToChatLayout(data.msg_id, data.sender, plaintext, 'received', data.timestamp);
+                socket.emit('msg_read_receipt', { sender: data.sender, msg_id: data.msg_id });
+            }
+        } catch (err) {
+            console.error("[CRYPTO ERROR] Decryption operation aborted.", err);
+        }
+    }
+});
+
+socket.on('msg_status_update', (data) => {
+    const tickSpan = document.getElementById(`tick_${data.msg_id}`);
+    if (!tickSpan) return;
+    if (data.status === 'sent') {
+        tickSpan.innerText = " ✓";
+    } else if (data.status === 'delivered') {
+        tickSpan.innerText = " ✓✓";
+    } else if (data.status === 'read') {
+        tickSpan.innerText = " ✓✓";
+        tickSpan.className = "status-tick read";
+    }
+});
+
+function emitLocalTypingLifecycleSignal() {
+    if (!targetUser) return;
+    socket.emit('typing_status', { target_user: targetUser, is_typing: true });
+    clearTimeout(localTypingActivityTimeoutHandle);
+    localTypingActivityTimeoutHandle = setTimeout(() => {
+        socket.emit('typing_status', { target_user: targetUser, is_typing: false });
+    }, 1800);
+}
+
+socket.on('peer_typing', (data) => {
+    if (data.sender === targetUser) {
+        document.getElementById('typing-indicator').innerText = data.is_typing ? `${data.sender} is typing...` : "";
+    }
+});
+
+function appendMessageElementToChatLayout(msgId, sender, text, type, timestamp) {
+    let containerBox = document.getElementById('messages');
+    let wrapper = document.createElement('div');
+    wrapper.classList.add('msg-wrapper', type);
+    
+    const tickMarkup = (type === 'sent') ? `<span id="tick_${msgId}" class="status-tick"> ✓</span>` : '';
+
+    wrapper.innerHTML = `
+        <div class="msg-bubble">
+            <strong style="display:block; font-size:0.75rem; margin-bottom:2px; opacity:0.8;">${sender}</strong>
+            <div>${text}</div>
+        </div>
+        <div class="msg-meta">${timestamp} ${tickMarkup}</div>
+    `;
+    
+    containerBox.appendChild(wrapper);
+    containerBox.scrollTop = containerBox.scrollHeight;
+}
+
+function triggerIdentityVerificationModal(username, isSelf) {
+    const targetFingerprint = trackedIdentityFingerprints[username] || "Unavailable keys configuration context";
+    document.getElementById('modal-title').innerText = isSelf ? "Your Identity Footprint" : `Verifying: ${username}`;
+    document.getElementById('modal-fingerprint-display').innerText = targetFingerprint;
+    document.getElementById('verification-decision-panel').style.display = isSelf ? 'none' : 'flex';
+    document.getElementById('crypto-modal').style.display = 'flex';
+}
+
+function recordFingerprintValidationState(trustedAssertState) {
+    manuallyVerifiedKeysRecord[targetUser] = trustedAssertState;
+    updatePeerFingerprintDisplayLabel();
+    closeCryptoVerificationModal();
+}
+
+function closeCryptoVerificationModal() {
+    document.getElementById('crypto-modal').style.display = 'none';
+}
+
+function processCustomWallpaperUpload(inputSourceElement) {
+    const file = inputSourceElement.files[0];
+    if (file) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const dataUrlString = `url('${e.target.result}')`;
+            document.getElementById('messages').style.backgroundImage = dataUrlString;
+            localStorage.setItem('e2ee_chat_wallpaper', dataUrlString);
+        };
+        reader.readAsDataURL(file);
+    }
+}
+
+function toggleTheme() {
+    const currentTheme = document.documentElement.getAttribute('data-theme');
+    const targetSetTheme = (currentTheme === 'dark') ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', targetSetTheme);
+    localStorage.setItem('e2ee_theme', targetSetTheme);
+}
+
+function logToTerminalWindowInterfaceConsole(actionTag, dataPayload) {
+    const consoleEl = document.getElementById('cipher-console');
+    if (!consoleEl) return;
+    const stamp = new Date().toLocaleTimeString();
+    consoleEl.innerHTML += `\n[${stamp}] [${actionTag}]\n` +
+                           `↳ Target Vector: ${dataPayload.sender} -> ${dataPayload.receiver}\n` +
+                           `↳ Key Transport Block: ${dataPayload.encrypted_aes_key.substring(0, 48)}...\n` +
+                           `↳ Target Message Ciphertext: ${dataPayload.encrypted_message.substring(0, 64)}...\n` +
+                           `========================================================================\n`;
+    consoleEl.scrollTop = consoleEl.scrollHeight;
+}
+</script>
+</body>
+</html>
