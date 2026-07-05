@@ -107,9 +107,7 @@ Secure-Chat-App/
 │   └── images/
 │
 ├── templates/
-│   └── index.html
-│
-└── screenshots/
+    └── index.html
 ```
 
 ---
